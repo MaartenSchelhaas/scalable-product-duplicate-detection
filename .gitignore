@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project outputs
+models/*
+!models/.gitkeep
+results/cache/
+results/predictions/
+
+data/
