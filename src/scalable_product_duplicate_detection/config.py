@@ -12,5 +12,6 @@ class SerializationMode(Enum):
     TITLE_KV = "title_and_key_values"
 
 
-DATA_PATH = Path("data/TVs-all-merged.json")
+DATA_PATH = Path(r"C:\Users\maart\GitHub\text-mining-and-recommender-systems\scalable-product-duplicate-detection\data\TVs-all-merged.json")
+BRANDS_PATH = DATA_PATH.parent / "brands.csv"
 SERIALIZATION_MODE = SerializationMode.TITLE_KV
