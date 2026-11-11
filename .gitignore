@@ -225,4 +225,7 @@ models/*
 results/cache/
 results/predictions/
 
-data/
+data/*
+!data/brands.csv
+docs/
+notebooks/
