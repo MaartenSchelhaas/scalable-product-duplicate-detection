@@ -4,7 +4,9 @@ bootstrapped sample forming train/test split
 and within the train the finetune/validation split for the embedding
 """
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
@@ -38,6 +40,30 @@ def make_split(model_ids: list[str], finetune_fraction: float, seed: int) -> Spl
         finetune=finetune.tolist(),
         validation=validation.tolist(),
     )
+
+
+def save_split(split: Split, splits_dir: Path, number: int) -> None:
+    """Save the split of one bootstrap as JSON.
+
+    Args:
+        split (Split): Split from make_split
+        splits_dir (Path): Folder of all split files
+        number (int): Bootstrap number, starting at 1
+    """
+    (splits_dir / f"bootstrap_{number}.json").write_text(json.dumps(asdict(split)), encoding="utf-8")
+
+
+def load_split(splits_dir: Path, number: int) -> Split:
+    """Load the split of one bootstrap saved by save_split.
+
+    Args:
+        splits_dir (Path): Folder of all split files
+        number (int): Bootstrap number, starting at 1
+
+    Returns:
+        Split: Indices into the product list for train, test, finetune and validation
+    """
+    return Split(**json.loads((splits_dir / f"bootstrap_{number}.json").read_text(encoding="utf-8")))
 
 
 def _draw_bootstrap(n_products: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
