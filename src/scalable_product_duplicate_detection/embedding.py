@@ -5,6 +5,7 @@ Load an embedding model from a local folder and embed serialized products.
 from pathlib import Path
 
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 
 
@@ -16,9 +17,9 @@ def load_model(path: Path, max_tokens: int) -> SentenceTransformer:
         max_tokens (int): Number of tokens after which input text is truncated
 
     Returns:
-        SentenceTransformer: The model, with the pooling and normalisation stored in its own config
+        SentenceTransformer: The model on the fastest available device, with the pooling and normalisation stored in its own config
     """
-    model = SentenceTransformer(str(path))
+    model = SentenceTransformer(str(path), device=_fastest_device())
     model.max_seq_length = max_tokens
 
     return model
@@ -35,3 +36,12 @@ def embed(model: SentenceTransformer, texts: list[str]) -> np.ndarray:
         np.ndarray: One row per text (384 columns for bge-small), each of length 1.
     """
     return model.encode(texts, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=True)
+
+
+def _fastest_device() -> str:
+    """An NVIDIA GPU ("cuda") or Intel GPU ("xpu") if torch can use one, else "cpu"."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.xpu.is_available():
+        return "xpu"
+    return "cpu"

@@ -4,11 +4,13 @@ Batches hold whole modelID groups, filled up with same-brand products without a 
 """
 
 import math
+import time
 from collections import defaultdict
 
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
+from sentence_transformers.util import batch_to_device
 from transformers import get_linear_schedule_with_warmup
 
 from scalable_product_duplicate_detection.data import PreparedProduct
@@ -59,15 +61,23 @@ def finetune(
 
     # Training mode switches dropout on
     model.train()
+
+    # Recompute each layer's activations during backward instead of storing all 12 layers:
+    # a batch of 48 texts of 512 tokens needs about 2 GB of RAM instead of more than 20 GB, at about 30% more time
+    model.gradient_checkpointing_enable()
+
     epoch_losses = []
 
     for epoch in range(1, epochs + 1):
+        batches = _make_batches(products, groups, singletons, groups_per_batch, batch_size, rng)
         batch_losses = []
+        epoch_start = time.perf_counter()
 
-        for batch in _make_batches(products, groups, singletons, groups_per_batch, batch_size, rng):
-            tokenized = model.preprocess([texts[index] for index in batch])
+        for number, batch in enumerate(batches, start=1):
+            # preprocess returns tensors on the CPU; the model may sit on a GPU
+            tokenized = batch_to_device(model.preprocess([texts[index] for index in batch]), model.device)
             embeddings = model(tokenized)["sentence_embedding"]
-            labels = torch.tensor(label_of_product[batch])
+            labels = torch.tensor(label_of_product[batch], device=model.device)
 
             loss = _supcon_loss(embeddings, labels, temperature)
             loss.backward()
@@ -77,8 +87,12 @@ def finetune(
 
             batch_losses.append(loss.item())
 
+            # flush, so a notebook shows each line as soon as the batch is done
+            elapsed = time.perf_counter() - epoch_start
+            print(f"  epoch {epoch}/{epochs}, batch {number}/{len(batches)}: loss {batch_losses[-1]:.4f}, {elapsed:.0f}s", flush=True)
+
         epoch_losses.append(sum(batch_losses) / len(batch_losses))
-        print(f"epoch {epoch}/{epochs}: loss {epoch_losses[-1]:.4f}")
+        print(f"epoch {epoch}/{epochs}: mean loss {epoch_losses[-1]:.4f}, {time.perf_counter() - epoch_start:.0f}s", flush=True)
 
     model.eval()
     return epoch_losses

@@ -18,6 +18,32 @@ dependencies = [
 dev = [
     "jupyter"
 ]
+# Pick one: torch from PyPI, or torch with Intel GPU (XPU) support from PyTorch's own index
+cpu = [
+    "torch>=2.5",
+]
+xpu = [
+    "torch>=2.5",
+    "pytorch-triton-xpu>=3.3.0",
+]
+
+[tool.uv]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "xpu" }],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+pytorch-triton-xpu = [
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
 
 [project.scripts]
 scalable-product-duplicate-detection = "scalable_product_duplicate_detection:main"
