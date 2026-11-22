@@ -29,5 +29,9 @@ LEARNING_RATE = 2e-5
 WARMUP_FRACTION = 0.1
 TEMPERATURE = 0.07
 
+# LSH: r is the only knob, b = N_BITS // r
+N_BITS = 256
+R_VALUES = list(range(1, 41))
+
 # Clustering
 EPSILONS = [step / 100 for step in range(101)]
