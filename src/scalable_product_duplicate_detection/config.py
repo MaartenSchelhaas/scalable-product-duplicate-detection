@@ -28,3 +28,6 @@ BATCH_SIZE = 48
 LEARNING_RATE = 2e-5
 WARMUP_FRACTION = 0.1
 TEMPERATURE = 0.07
+
+# Clustering
+EPSILONS = [step / 100 for step in range(101)]

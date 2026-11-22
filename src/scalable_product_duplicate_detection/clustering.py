@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from scalable_product_duplicate_detection.data import PreparedProduct
+from scalable_product_duplicate_detection.evaluation import cluster_scores
 
 
 @dataclass(frozen=True)
@@ -20,10 +21,10 @@ class _Merge:
 def cluster(
     vectors: np.ndarray,
     products: list[PreparedProduct],
-    indices: list[int],
+    clustered_indices: list[int],
     candidate_pairs: list[tuple[int, int]],
     epsilons: list[float],
-) -> list[list[list[int]]]:
+) -> dict[float, list[list[int]]]:
     """Cluster a set of products once for every epsilon.
 
     The main part (distances, sorting, single linkage) runs once. After which for each epsilon
@@ -32,22 +33,56 @@ def cluster(
     Args:
         vectors (np.ndarray): Unit-length embedding of every product, row i belongs to products[i]
         products (list[PreparedProduct]): All products, in load_products order (shop and brand decide the infinite pairs)
-        indices (list[int]): Positions in products(list) of the products to cluster
+        clustered_indices (list[int]): Positions in products(list) of the products to cluster
         candidate_pairs (list[tuple[int, int]]): Pairs of product indices to compare. Non pairs will receive inf distance.
         epsilons (list[float]): Largest distance at which clusters still merge, one clustering per value
 
     Returns:
-        list[list[list[int]]]: The clusters for each epsilon: For each epsilon, for each cluster a list of indices
+        dict[float, list[list[int]]]: The clusters for each epsilon: For each epsilon, for each cluster a list of indices
     """
     distances = _candidate_distances(vectors, products, candidate_pairs)
     merges = _single_linkage(distances)
 
-    # Appended in the order of epsilons, so position k of the result belongs to epsilons[k]
-    clusterings = []
+    clusterings = {}
     for epsilon in epsilons:
-        clusterings.append(_clusters_for_epsilon(merges, indices, epsilon))
+        clusterings[epsilon] = _clusters_for_epsilon(merges, clustered_indices, epsilon)
 
     return clusterings
+
+
+def best_epsilon(
+    clusterings: dict[float, list[list[int]]],
+    products: list[PreparedProduct],
+    clustered_indices: list[int],
+) -> float:
+    """The epsilon whose clustering has the highest F1.
+
+    Counts F1 with the modelIDs of the clustered products.
+
+    Args:
+        clusterings (dict[float, list[list[int]]]): Output of cluster() over the epsilon grid
+        products (list[PreparedProduct]): All products, in load_products order
+        clustered_indices (list[int]): The clustered_indices given to cluster()
+
+    Returns:
+        float: The best epsilon; on a tie the smallest
+    """
+    best = None
+    # Below every possible F1, so the first epsilon always wins the first comparison, also when all F1 are 0
+    best_f1 = -1.0
+
+    for epsilon, clusters in clusterings.items():
+        f1 = cluster_scores(clusters, products, clustered_indices)["f1"]
+
+        # Strictly greater, on a tie the smaller epsilon stays
+        if f1 > best_f1:
+            best = epsilon
+            best_f1 = f1
+
+    if best is None:
+        raise ValueError("clusterings is empty")
+
+    return best
 
 
 def _candidate_distances(
@@ -103,9 +138,9 @@ def _single_linkage(distances: dict[tuple[int, int], float]) -> list[_Merge]:
     return merges
 
 
-def _clusters_for_epsilon(merges: list[_Merge], indices: list[int], epsilon: float) -> list[list[int]]:
+def _clusters_for_epsilon(merges: list[_Merge], clustered_indices: list[int], epsilon: float) -> list[list[int]]:
     """Clusters after every merge with a distance of at most epsilon, singletons included."""
-    cluster_of_product = {index: [index] for index in indices}
+    cluster_of_product = {index: [index] for index in clustered_indices}
 
     for merge in merges:
         # The merges are sorted by distance, so the first one above epsilon ends the replay
