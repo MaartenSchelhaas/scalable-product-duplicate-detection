@@ -38,15 +38,15 @@ def signatures(vectors: np.ndarray, n_bits: int, seed: int) -> np.ndarray:
     return signature_matrix
 
 
-def candidate_pairs(signatures: np.ndarray, indices: list[int], rows: int) -> list[tuple[int, int]]:
+def candidate_pairs(signatures: np.ndarray, subset_indices: list[int], rows: int) -> list[tuple[int, int]]:
     """Pairs of products that share a bucket in at least one band.
 
     The rows of the signature matrix are cut into b = n_bits // rows bands of rows rows; leftover rows are unused.
-    Signatures holds every product, but only the subset indices go into the buckets.
+    Signatures holds every product, but only the products in subset_indices go into the buckets.
 
     Args:
         signatures (np.ndarray): Signature matrix of all products, column i belongs to products[i]
-        indices (list[int]): Positions in products of the products to hash, e.g. train or test split
+        subset_indices (list[int]): Positions in products of the products to hash, e.g. train or test split
         rows (int): Rows per band r; a larger r gives fewer candidates
 
     Returns:
@@ -63,7 +63,7 @@ def candidate_pairs(signatures: np.ndarray, indices: list[int], rows: int) -> li
 
     for band in range(bands):
         start = band * rows
-        buckets = _buckets_of_band(signatures, indices, start, rows)
+        buckets = _buckets_of_band(signatures, subset_indices, start, rows)
         pairs_of_band = _pairs_in_buckets(buckets)
 
         for pair in pairs_of_band:
@@ -73,11 +73,16 @@ def candidate_pairs(signatures: np.ndarray, indices: list[int], rows: int) -> li
     return sorted_pairs
 
 
-def _buckets_of_band(signatures: np.ndarray, indices: list[int], start: int, rows: int) -> dict[bytes, list[int]]:
+def _buckets_of_band(
+    signatures: np.ndarray,
+    subset_indices: list[int],
+    start: int,
+    rows: int,
+) -> dict[bytes, list[int]]:
     """Products grouped by their rows start to start + rows: equal bits give the same key, hence the same bucket."""
     buckets: dict[bytes, list[int]] = {}
 
-    for index in indices:
+    for index in subset_indices:
         band_bits = signatures[start : start + rows, index]
         key = band_bits.tobytes()
 
