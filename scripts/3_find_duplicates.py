@@ -18,15 +18,19 @@ import pandas as pd
 from scalable_product_duplicate_detection import config
 from scalable_product_duplicate_detection.bootstrap import load_split
 from scalable_product_duplicate_detection.data import load_products, prepare
+from scalable_product_duplicate_detection.embedding.method import EmbeddingMethod
 from scalable_product_duplicate_detection.evaluation import cluster_scores, lsh_scores
 from scalable_product_duplicate_detection.seeds import make_seeds
-from scalable_product_duplicate_detection.similarity_methods import EmbeddingMethod, SimilarityMethod
+from scalable_product_duplicate_detection.similarity_method import SimilarityMethod
 
 BOOTSTRAPS = range(1, config.N_BOOTSTRAPS + 1)
 
 # r = 1 makes every pair a candidate, so the off-the-shelf run is only scored on all comparisons, to show what
 # fine-tuning adds; the LSH sweep is for the fine-tuned run
 R_VALUES_OF_RUN = {"off_the_shelf": [1], "fine_tuned": config.R_VALUES}
+
+# One of clustering.LINKAGES
+LINKAGE = "single"
 
 
 def main() -> None:
@@ -80,9 +84,9 @@ def main() -> None:
 
 def _tune_and_test(similarity_method: SimilarityMethod, test: list[int], rows_per_band: int) -> dict:
     """Tune on the method's tuning part, then the LSH and clustering scores on the test part."""
-    similarity_method.tune(rows_per_band)
-    candidates, clusters = similarity_method.find_duplicates(test, rows_per_band)
-    _, epsilon = similarity_method.tuned[rows_per_band]
+    similarity_method.tune(rows_per_band, LINKAGE)
+    candidates, clusters = similarity_method.find_duplicates(test, rows_per_band, LINKAGE)
+    _, epsilon = similarity_method.tuned[(rows_per_band, LINKAGE)]
 
     lsh = lsh_scores(candidates, similarity_method.products, test)
     final = cluster_scores(clusters, similarity_method.products, test)

@@ -13,8 +13,8 @@ import json
 from scalable_product_duplicate_detection import config
 from scalable_product_duplicate_detection.bootstrap import load_split
 from scalable_product_duplicate_detection.data import load_products, prepare
+from scalable_product_duplicate_detection.embedding.method import EmbeddingMethod
 from scalable_product_duplicate_detection.seeds import make_seeds
-from scalable_product_duplicate_detection.similarity_methods import EmbeddingMethod
 
 # To time one epoch first: BOOTSTRAPS = [1] and EPOCHS = 1
 BOOTSTRAPS = range(1, config.N_BOOTSTRAPS + 1)

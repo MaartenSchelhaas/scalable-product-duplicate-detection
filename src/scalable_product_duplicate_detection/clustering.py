@@ -1,18 +1,33 @@
 """
-Single-linkage clustering with the merge rule of MSM: two clusters merge only if every pair across them is finite.
+Hierarchical clustering with the merge rule of MSM: two clusters merge only if every pair across them is finite.
 A pair is infinite if it is not a candidate, if both products come from the same shop, or if their known brands differ.
+
+Two linkages: single (cluster distance = smallest pair distance, as in MSM) and average (mean pair distance).
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+from scipy.cluster.hierarchy import linkage as scipy_linkage
+from scipy.spatial.distance import squareform
+
 from scalable_product_duplicate_detection.data import PreparedProduct
 from scalable_product_duplicate_detection.evaluation import cluster_scores
+
+LINKAGES = ["single", "average"]
+
+# Stands in for an infinite distance in the dense matrix of average linkage, as scipy only takes finite values.
+# One such pair across two clusters keeps their mean distance above INFINITE / (pairs across), far above every epsilon
+INFINITE = 1e12
 
 
 @dataclass(frozen=True)
 class _Merge:
+    """One step of the merge history."""
+
     distance: float
+    # Two products, one from each of the two clusters that merge at this distance
     first: int
     second: int
 
@@ -23,11 +38,12 @@ def cluster(
     subset_indices: list[int],
     candidate_pairs: list[tuple[int, int]],
     epsilons: list[float],
+    linkage: str,
 ) -> dict[float, list[list[int]]]:
     """Cluster a set of products once for every epsilon.
 
-    The main part (distances, sorting, single linkage) runs once. After which for each epsilon
-    we can quickly get the clusters. 
+    The main part (distances, the merge history of the linkage) runs once. After which for each epsilon
+    we can quickly get the clusters.
 
     Args:
         distance_function (Callable[[int, int], float]): Distance between products[i] and products[j]
@@ -35,12 +51,19 @@ def cluster(
         subset_indices (list[int]): Positions in products(list) of the products to cluster
         candidate_pairs (list[tuple[int, int]]): Pairs of product indices to compare. Non pairs will receive inf distance.
         epsilons (list[float]): Largest distance at which clusters still merge, one clustering per value
+        linkage (str): One of LINKAGES, "single" or "average"
 
     Returns:
         dict[float, list[list[int]]]: The clusters for each epsilon: For each epsilon, for each cluster a list of indices
     """
     distances = _candidate_distances(distance_function, products, candidate_pairs)
-    merges = _single_linkage(distances)
+
+    if linkage == "single":
+        merges = _single_linkage(distances)
+    elif linkage == "average":
+        merges = _average_linkage(distances, subset_indices)
+    else:
+        raise ValueError(f"linkage must be one of {LINKAGES}, got {linkage}")
 
     clusterings = {}
     for epsilon in epsilons:
@@ -136,6 +159,42 @@ def _single_linkage(distances: dict[tuple[int, int], float]) -> list[_Merge]:
     return merges
 
 
+def _average_linkage(distances: dict[tuple[int, int], float], subset_indices: list[int]) -> list[_Merge]:
+    """Full merge history of average linkage, without a threshold."""
+    subset = sorted(subset_indices)
+    if len(subset) < 2:
+        return []
+
+    position_of_product = {}
+    for position, index in enumerate(subset):
+        position_of_product[index] = position
+
+    matrix = np.full((len(subset), len(subset)), INFINITE)
+    np.fill_diagonal(matrix, 0.0)
+
+    for (i, j), distance in distances.items():
+        # Rounding can give -1e-7 for identical products; scipy needs distances of at least 0
+        finite = max(0.0, distance)
+        matrix[position_of_product[i], position_of_product[j]] = finite
+        matrix[position_of_product[j], position_of_product[i]] = finite
+
+    # checks=False: the matrix is symmetric up to rounding, which the strict check would reject
+    tree = scipy_linkage(squareform(matrix, checks=False), method="average")
+
+    # scipy numbers the products 0 to n - 1 (positions in subset) and the cluster made in row k of the tree n + k;
+    # any member of a cluster can stand for it, as _clusters_for_epsilon looks up the cluster of that member
+    member_of_cluster = list(subset)
+    merges = []
+
+    for first_id, second_id, distance, _ in tree:
+        first = member_of_cluster[int(first_id)]
+        second = member_of_cluster[int(second_id)]
+        member_of_cluster.append(first)
+        merges.append(_Merge(distance=float(distance), first=first, second=second))
+
+    return merges
+
+
 def _clusters_for_epsilon(merges: list[_Merge], subset_indices: list[int], epsilon: float) -> list[list[int]]:
     """Clusters after every merge with a distance of at most epsilon, singletons included."""
     cluster_of_product = {index: [index] for index in subset_indices}
@@ -145,7 +204,7 @@ def _clusters_for_epsilon(merges: list[_Merge], subset_indices: list[int], epsil
         if merge.distance > epsilon:
             break
 
-        # Same state as when _single_linkage accepted this merge, so it is valid again
+        # Same state as when the linkage made this merge, so it is valid again
         merged = cluster_of_product[merge.first] + cluster_of_product[merge.second]
         for member in merged:
             cluster_of_product[member] = merged

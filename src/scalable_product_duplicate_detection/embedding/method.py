@@ -1,118 +1,23 @@
 """
-Similarity methods: how a method represents, hashes and compares products, with the steps every method shares.
-
-A subclass implements what makes it that method:
-1) fit: learn from the training part (or load what was learned before), represent and hash every product
-2) distance: the distance between two products
-3) parameter_grid: the settings it tunes besides epsilon
-The base class does the rest the same way for every method: LSH candidates, tuning on the tuning part and
-finding the duplicates in the test part.
+The embedding similarity method: an embedding model, random-hyperplane signatures for
+the LSH and the distance
 """
 
 import time
-from abc import ABC, abstractmethod
 from pathlib import Path
 
-import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from scalable_product_duplicate_detection import lsh
 from scalable_product_duplicate_detection.bootstrap import Split
-from scalable_product_duplicate_detection.clustering import best_epsilon, cluster
 from scalable_product_duplicate_detection.data import PreparedProduct, serialize
-from scalable_product_duplicate_detection.embedding import embed, load_model
-from scalable_product_duplicate_detection.finetune import finetune
-
-
-class SimilarityMethod(ABC):
-    """One duplicate detection method for one bootstrap.
-
-    Use: fit(split) once, then per r: tune(r) on the tuning part and find_duplicates(test, r) in the test part.
-    """
-
-    # Set by fit: column i is the signature of products[i], and the part the method tunes on
-    signature_matrix: np.ndarray
-    tuning_indices: list[int]
-
-    def __init__(self, products: list[PreparedProduct], epsilons: list[float]) -> None:
-        """
-        Args:
-            products (list[PreparedProduct]): All products, in load_products order
-            epsilons (list[float]): Epsilon grid that tune searches
-        """
-        self.products = products
-        self.epsilons = epsilons
-
-        # The setting distance uses; tune and find_duplicates set it from the grid
-        self.parameters: dict = {}
-
-        # Per r the best setting and epsilon from tune, read by find_duplicates
-        self.tuned: dict[int, tuple[dict, float]] = {}
-
-    @abstractmethod
-    def fit(self, split: Split) -> None:
-        """Learn from the training part of split (or load it), then represent and hash every product.
-
-        Must set signature_matrix and tuning_indices.
-        """
-
-    @abstractmethod
-    def distance(self, i: int, j: int) -> float:
-        """Distance between products[i] and products[j] under the current parameters."""
-
-    @abstractmethod
-    def parameter_grid(self) -> list[dict]:
-        """Every setting tune tries besides epsilon; [{}] if the method only tunes epsilon."""
-
-    def candidate_pairs(self, subset_indices: list[int], rows_per_band: int) -> list[tuple[int, int]]:
-        """LSH candidate pairs among subset_indices, with r = rows_per_band."""
-        return lsh.candidate_pairs(self.signature_matrix, subset_indices, rows_per_band)
-
-    def tune(self, rows_per_band: int) -> None:
-        """The setting and epsilon with the best F1 on the tuning candidates, stored in tuned[rows_per_band].
-
-        On a tie the first setting of the grid and the smallest epsilon stay.
-        """
-        candidates = self.candidate_pairs(self.tuning_indices, rows_per_band)
-
-        best = None
-        # Below every possible F1, so the first setting always wins the first comparison
-        best_f1 = -1.0
-
-        for parameters in self.parameter_grid():
-            self.parameters = parameters
-            clusterings = cluster(self.distance, self.products, self.tuning_indices, candidates, self.epsilons)
-            epsilon, f1 = best_epsilon(clusterings, self.products, self.tuning_indices)
-
-            if f1 > best_f1:
-                best = (parameters, epsilon)
-                best_f1 = f1
-
-        if best is None:
-            raise ValueError("parameter_grid is empty")
-
-        self.tuned[rows_per_band] = best
-
-    def find_duplicates(
-        self,
-        subset_indices: list[int],
-        rows_per_band: int,
-    ) -> tuple[list[tuple[int, int]], list[list[int]]]:
-        """Candidate pairs and clusters of subset_indices with the setting and epsilon that tune stored for this r.
-
-        Returns:
-            tuple[list[tuple[int, int]], list[list[int]]]: The LSH candidate pairs and the clusters
-        """
-        parameters, epsilon = self.tuned[rows_per_band]
-        self.parameters = parameters
-
-        candidates = self.candidate_pairs(subset_indices, rows_per_band)
-        clusters = cluster(self.distance, self.products, subset_indices, candidates, [epsilon])[epsilon]
-        return candidates, clusters
+from scalable_product_duplicate_detection.embedding.finetune import finetune
+from scalable_product_duplicate_detection.embedding.hyperplanes import signatures
+from scalable_product_duplicate_detection.embedding.model import embed, load_model
+from scalable_product_duplicate_detection.similarity_method import SimilarityMethod
 
 
 class EmbeddingMethod(SimilarityMethod):
-    """Embedding model with random-hyperplane LSH and distance 1 - cosine.
+    """Embedding model with random-hyperplane LSH and the distance
 
     A fine-tuned run loads its model from model_dir; if that folder does not exist yet, or retrain is True, fit first
     fine-tunes a fresh copy of the base model on the fine-tune part and saves it there.
@@ -180,7 +85,7 @@ class EmbeddingMethod(SimilarityMethod):
             model = load_model(self.model_dir, self.max_tokens)
 
         self.vectors = embed(model, texts)
-        self.signature_matrix = lsh.signatures(self.vectors, self.n_bits, self.seed)
+        self.signature_matrix = signatures(self.vectors, self.n_bits, self.seed)
 
         # A fine-tuned model has seen the fine-tune part, so it tunes epsilon on the validation part only
         if self.fine_tuned:
