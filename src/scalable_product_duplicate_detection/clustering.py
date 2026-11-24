@@ -3,9 +3,8 @@ Single-linkage clustering with the merge rule of MSM: two clusters merge only if
 A pair is infinite if it is not a candidate, if both products come from the same shop, or if their known brands differ.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-
-import numpy as np
 
 from scalable_product_duplicate_detection.data import PreparedProduct
 from scalable_product_duplicate_detection.evaluation import cluster_scores
@@ -19,7 +18,7 @@ class _Merge:
 
 
 def cluster(
-    vectors: np.ndarray,
+    distance_function: Callable[[int, int], float],
     products: list[PreparedProduct],
     subset_indices: list[int],
     candidate_pairs: list[tuple[int, int]],
@@ -31,7 +30,7 @@ def cluster(
     we can quickly get the clusters. 
 
     Args:
-        vectors (np.ndarray): Unit-length embedding of every product, row i belongs to products[i]
+        distance_function (Callable[[int, int], float]): Distance between products[i] and products[j]
         products (list[PreparedProduct]): All products, in load_products order (shop and brand decide the infinite pairs)
         subset_indices (list[int]): Positions in products(list) of the products to cluster
         candidate_pairs (list[tuple[int, int]]): Pairs of product indices to compare. Non pairs will receive inf distance.
@@ -40,7 +39,7 @@ def cluster(
     Returns:
         dict[float, list[list[int]]]: The clusters for each epsilon: For each epsilon, for each cluster a list of indices
     """
-    distances = _candidate_distances(vectors, products, candidate_pairs)
+    distances = _candidate_distances(distance_function, products, candidate_pairs)
     merges = _single_linkage(distances)
 
     clusterings = {}
@@ -54,7 +53,7 @@ def best_epsilon(
     clusterings: dict[float, list[list[int]]],
     products: list[PreparedProduct],
     subset_indices: list[int],
-) -> float:
+) -> tuple[float, float]:
     """The epsilon whose clustering has the highest F1.
 
     Counts F1 with the modelIDs of the clustered products.
@@ -65,7 +64,7 @@ def best_epsilon(
         subset_indices (list[int]): The subset_indices given to cluster()
 
     Returns:
-        float: The best epsilon; on a tie the smallest
+        tuple[float, float]: The best epsilon (on a tie the smallest) and its F1
     """
     best = None
     # Below every possible F1, so the first epsilon always wins the first comparison, also when all F1 are 0
@@ -82,28 +81,27 @@ def best_epsilon(
     if best is None:
         raise ValueError("clusterings is empty")
 
-    return best
+    return best, best_f1
 
 
 def _candidate_distances(
-    vectors: np.ndarray,
+    distance_function: Callable[[int, int], float],
     products: list[PreparedProduct],
     candidate_pairs: list[tuple[int, int]],
 ) -> dict[tuple[int, int], float]:
-    """Distance 1 - cosine per finite candidate pair, keyed (smaller index, larger index); infinite pairs are left out."""
+    """Distance per finite candidate pair, keyed (smaller index, larger index); infinite pairs are left out."""
     distances = {}
 
     for pair in candidate_pairs:
         # _can_merge looks pairs up with the smaller index first, so every key is stored that way
         i, j = min(pair), max(pair)
 
-        # Pairs with infinite distance are dropped as candidate pairs
+        # Pairs with infinite distance are dropped as candidate pairs, before the possibly expensive distance call
         if _is_infinite(products[i], products[j]):
             continue
 
-        # The vectors have length 1, so their dot product is the cosine similarity; a pair given twice gets the same key
-        cosine = float(vectors[i] @ vectors[j])
-        distances[(i, j)] = 1.0 - cosine
+        # A pair given twice gets the same key
+        distances[(i, j)] = distance_function(i, j)
 
     return distances
 

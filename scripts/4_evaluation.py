@@ -2,7 +2,7 @@
 Show the results of script 3: the mean over the bootstraps per run and r, and the plots of pair quality, pair
 completeness, F1* and F1 against the fraction of comparisons, as the assignment asks
 
-Reads config.DETECTION_PATH. Writes the table config.MEAN_PER_R_PATH and one figure per x-axis scale (linear as in
+Reads config.SCORES_PATH. Writes the table config.MEAN_PER_R_PATH and one figure per x-axis scale (linear as in
 the papers, log to spread out the small fractions) to config.FIGURES_DIR.
 """
 
@@ -20,12 +20,12 @@ TITLE_OF_METRIC = {
 
 
 def main() -> None:
-    detection = pd.read_csv(config.DETECTION_PATH)
+    scores = pd.read_csv(config.SCORES_PATH)
 
     # The fraction is averaged too, so every r becomes one point of the mean curve
     columns = ["b", "t", "fraction_of_comparisons", "pair_quality", "pair_completeness", "f1_star", "epsilon",
                "precision", "recall", "f1"]
-    mean_per_r = detection.groupby(["run", "r"])[columns].mean().reset_index()
+    mean_per_r = scores.groupby(["run", "r"])[columns].mean().reset_index()
 
     config.TABLES_DIR.mkdir(parents=True, exist_ok=True)
     mean_per_r.to_csv(config.MEAN_PER_R_PATH, index=False)
