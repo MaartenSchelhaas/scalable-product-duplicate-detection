@@ -21,7 +21,7 @@ class _Merge:
 def cluster(
     vectors: np.ndarray,
     products: list[PreparedProduct],
-    clustered_indices: list[int],
+    subset_indices: list[int],
     candidate_pairs: list[tuple[int, int]],
     epsilons: list[float],
 ) -> dict[float, list[list[int]]]:
@@ -33,7 +33,7 @@ def cluster(
     Args:
         vectors (np.ndarray): Unit-length embedding of every product, row i belongs to products[i]
         products (list[PreparedProduct]): All products, in load_products order (shop and brand decide the infinite pairs)
-        clustered_indices (list[int]): Positions in products(list) of the products to cluster
+        subset_indices (list[int]): Positions in products(list) of the products to cluster
         candidate_pairs (list[tuple[int, int]]): Pairs of product indices to compare. Non pairs will receive inf distance.
         epsilons (list[float]): Largest distance at which clusters still merge, one clustering per value
 
@@ -45,7 +45,7 @@ def cluster(
 
     clusterings = {}
     for epsilon in epsilons:
-        clusterings[epsilon] = _clusters_for_epsilon(merges, clustered_indices, epsilon)
+        clusterings[epsilon] = _clusters_for_epsilon(merges, subset_indices, epsilon)
 
     return clusterings
 
@@ -53,7 +53,7 @@ def cluster(
 def best_epsilon(
     clusterings: dict[float, list[list[int]]],
     products: list[PreparedProduct],
-    clustered_indices: list[int],
+    subset_indices: list[int],
 ) -> float:
     """The epsilon whose clustering has the highest F1.
 
@@ -62,7 +62,7 @@ def best_epsilon(
     Args:
         clusterings (dict[float, list[list[int]]]): Output of cluster() over the epsilon grid
         products (list[PreparedProduct]): All products, in load_products order
-        clustered_indices (list[int]): The clustered_indices given to cluster()
+        subset_indices (list[int]): The subset_indices given to cluster()
 
     Returns:
         float: The best epsilon; on a tie the smallest
@@ -72,7 +72,7 @@ def best_epsilon(
     best_f1 = -1.0
 
     for epsilon, clusters in clusterings.items():
-        f1 = cluster_scores(clusters, products, clustered_indices)["f1"]
+        f1 = cluster_scores(clusters, products, subset_indices)["f1"]
 
         # Strictly greater, on a tie the smaller epsilon stays
         if f1 > best_f1:
@@ -138,9 +138,9 @@ def _single_linkage(distances: dict[tuple[int, int], float]) -> list[_Merge]:
     return merges
 
 
-def _clusters_for_epsilon(merges: list[_Merge], clustered_indices: list[int], epsilon: float) -> list[list[int]]:
+def _clusters_for_epsilon(merges: list[_Merge], subset_indices: list[int], epsilon: float) -> list[list[int]]:
     """Clusters after every merge with a distance of at most epsilon, singletons included."""
-    cluster_of_product = {index: [index] for index in clustered_indices}
+    cluster_of_product = {index: [index] for index in subset_indices}
 
     for merge in merges:
         # The merges are sorted by distance, so the first one above epsilon ends the replay
