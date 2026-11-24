@@ -1,41 +1,17 @@
 """
 File to do the locality sensitive hashing. Such that we only
-compare similar products instead of all. This entails:
-1) Hash embedding vectors in n-length signature vector
- using random hyperplaning.
-2) LSH: Split each signature vector into b bands of r bits.
-Products whose bits are the same in at least one band share
+compare similar products instead of all.
+LSH: Split each signature vector into b bands of r rows.
+Products whose rows are the same in at least one band share
 a bucket and become a candidate pair. More similar products
 have a higher chance to be in the same bucket.
+
+Every similarity method makes its own signature matrix (e.g. random hyperplanes for embeddings); the banding is shared.
 """
 
 import itertools
 
 import numpy as np
-
-
-def signatures(vectors: np.ndarray, n_bits: int, seed: int) -> np.ndarray:
-    """Random-hyperplane signature of every product, computed once per model and bootstrap.
-
-    Args:
-        vectors (np.ndarray): Embedding of every product, row i belongs to products[i]
-        n_bits (int): Number of random hyperplanes, the length of each signature
-        seed (int): Seed of the hyperplanes; the same seed gives the same hyperplanes for every model
-
-    Returns:
-        np.ndarray: Boolean signature matrix (n_bits, number of products), laid out as in the LSH slides: column i is
-        the signature of products[i], row k is True where a product lies on the positive side of hyperplane k
-    """
-    rng = np.random.default_rng(seed)
-    dimension = vectors.shape[1]
-
-    # Row k is the normal vector of hyperplane k, drawn from a standard normal distribution in every direction
-    hyperplanes = rng.standard_normal((n_bits, dimension))
-
-    # projection of the embedding vectors on the hyperplanes
-    projections = hyperplanes @ vectors.T
-    signature_matrix = projections > 0
-    return signature_matrix
 
 
 def candidate_pairs(signatures: np.ndarray, subset_indices: list[int], rows: int) -> list[tuple[int, int]]:

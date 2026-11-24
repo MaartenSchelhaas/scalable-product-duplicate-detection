@@ -2865,6 +2865,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "sentence-transformers" },
 ]
 
@@ -2888,6 +2889,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.1.0" },
     { name = "pytorch-triton-xpu", marker = "extra == 'xpu'", specifier = ">=3.3.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "scalable-product-duplicate-detection", extra = "xpu" } },
     { name = "scikit-learn", specifier = ">=1.9.1" },
+    { name = "scipy", specifier = ">=1.18" },
     { name = "sentence-transformers", specifier = ">=5,<6" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.5" },
     { name = "torch", marker = "extra == 'xpu'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "scalable-product-duplicate-detection", extra = "xpu" } },
